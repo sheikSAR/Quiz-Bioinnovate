@@ -1,65 +1,54 @@
 import { NextResponse } from 'next/server';
-import { MongoClient } from 'mongodb';
 import { v4 as uuidv4 } from 'uuid';
+import { supabaseAdmin } from '@/lib/supabase';
 import { RAW_QUESTIONS } from '@/lib/questions_seed';
 
-const MONGO_URL = process.env.MONGO_URL;
-const DB_NAME = process.env.DB_NAME || 'quiz_app';
-
-let cachedClient = null;
-async function getDb() {
-  if (!cachedClient) {
-    cachedClient = new MongoClient(MONGO_URL);
-    await cachedClient.connect();
-  }
-  return cachedClient.db(DB_NAME);
-}
+export const dynamic = 'force-dynamic';
 
 const QUIZ_DURATION_SEC = 15 * 60; // 15 minutes
-const ADMIN_USER = 'admin';
-const ADMIN_PASS = 'admin123';
+const ADMIN_USER = process.env.ADMIN_USERNAME || 'admin';
+const ADMIN_PASS = process.env.ADMIN_PASSWORD || 'admin123';
 
-async function seedIfNeeded(db) {
-  const count = await db.collection('questions').countDocuments();
-  if (count > 0) return;
-  const docs = RAW_QUESTIONS.map((r) => ({
-    id: uuidv4(),
-    set: r.set,
-    question_number: r.n,
-    question_text: r.q,
-    options: { A: r.a, B: r.b, C: r.c, D: r.d },
-    correct_answer: r.ans,
-    category: r.cat,
-  }));
-  await db.collection('questions').insertMany(docs);
+let seededOnce = false;
+
+async function seedIfNeeded() {
+  if (seededOnce) return;
+  const { count, error } = await supabaseAdmin
+    .from('questions')
+    .select('*', { count: 'exact', head: true });
+  if (error) {
+    // Table probably doesn't exist yet. Surface a clear error upstream.
+    throw new Error('Supabase schema not initialized. Please run /app/supabase/schema.sql in Supabase SQL Editor. Original error: ' + error.message);
+  }
+  if ((count || 0) === 0) {
+    const rows = RAW_QUESTIONS.map((r) => ({
+      id: uuidv4(),
+      set: r.set,
+      question_number: r.n,
+      question_text: r.q,
+      options: { A: r.a, B: r.b, C: r.c, D: r.d },
+      correct_answer: r.ans,
+      category: r.cat,
+    }));
+    const { error: insErr } = await supabaseAdmin.from('questions').insert(rows);
+    if (insErr) throw new Error('Failed to seed questions: ' + insErr.message);
+  }
+  seededOnce = true;
 }
 
-async function buildQuestionsForSet(db, setLetter) {
-  // Return set questions + bonus rounds; strip correct answers
-  const setQs = await db
-    .collection('questions')
-    .find({ set: setLetter })
-    .sort({ question_number: 1 })
-    .toArray();
-  const bonus1 = await db
-    .collection('questions')
-    .find({ set: 'BONUS_RESEARCH' })
-    .sort({ question_number: 1 })
-    .toArray();
-  const bonus2 = await db
-    .collection('questions')
-    .find({ set: 'BONUS_STARTUP' })
-    .sort({ question_number: 1 })
-    .toArray();
-  const all = [...setQs, ...bonus1, ...bonus2];
-  return all.map((q) => ({
-    id: q.id,
-    set: q.set,
-    question_number: q.question_number,
-    question_text: q.question_text,
-    options: q.options,
-    category: q.category,
-  }));
+async function buildQuestionsForSet(setLetter) {
+  const sets = [setLetter, 'BONUS_RESEARCH', 'BONUS_STARTUP'];
+  const { data, error } = await supabaseAdmin
+    .from('questions')
+    .select('id,set,question_number,question_text,options,category')
+    .in('set', sets)
+    .order('set', { ascending: true })
+    .order('question_number', { ascending: true });
+  if (error) throw error;
+  // Ensure participant's set questions come first, then bonus rounds
+  const own = (data || []).filter((q) => q.set === setLetter);
+  const bonus = (data || []).filter((q) => q.set !== setLetter);
+  return [...own, ...bonus];
 }
 
 function randomSet() {
@@ -67,22 +56,7 @@ function randomSet() {
   return sets[Math.floor(Math.random() * sets.length)];
 }
 
-function sanitizeParticipant(p) {
-  if (!p) return null;
-  const { _id, ...rest } = p;
-  return rest;
-}
-
-function sanitizeSession(s) {
-  if (!s) return null;
-  const { _id, ...rest } = s;
-  return rest;
-}
-
 async function handler(request, ctx) {
-  const db = await getDb();
-  await seedIfNeeded(db);
-
   const url = new URL(request.url);
   const resolvedParams = await ctx.params;
   const pathParts = resolvedParams?.path || [];
@@ -90,10 +64,11 @@ async function handler(request, ctx) {
   const method = request.method;
 
   try {
-    // Health
     if (path === '/' || path === '') {
-      return NextResponse.json({ status: 'ok', service: 'quiz-api' });
+      return NextResponse.json({ status: 'ok', service: 'blude-quiz-api', provider: 'supabase' });
     }
+
+    await seedIfNeeded();
 
     // ---------- PARTICIPANT ----------
     if (path === '/register' && method === 'POST') {
@@ -103,31 +78,38 @@ async function handler(request, ctx) {
         return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
       }
       const emailLc = String(email).toLowerCase().trim();
-      let participant = await db
-        .collection('participants')
-        .findOne({ $or: [{ email: emailLc }, { phone: String(phone).trim() }] });
+      const phoneStr = String(phone).trim();
 
-      if (participant) {
+      // Try to find existing participant by email OR phone
+      const { data: existingList } = await supabaseAdmin
+        .from('participants')
+        .select('*')
+        .or(`email.eq.${emailLc},phone.eq.${phoneStr}`)
+        .limit(1);
+      const existing = existingList && existingList[0];
+
+      if (existing) {
         // Check if already submitted
-        const existingSession = await db
-          .collection('quiz_sessions')
-          .findOne({ participant_id: participant.id });
-        if (existingSession?.submitted) {
+        const { data: sess } = await supabaseAdmin
+          .from('quiz_sessions')
+          .select('*')
+          .eq('participant_id', existing.id)
+          .maybeSingle();
+        if (sess?.submitted) {
           return NextResponse.json({
             error: 'You have already completed the quiz. Each participant can attempt only once.',
             already_submitted: true,
           }, { status: 403 });
         }
-        // Existing session token OR create new one for reconnect
         const session_token = uuidv4();
-        if (existingSession) {
-          await db.collection('quiz_sessions').updateOne(
-            { participant_id: participant.id },
-            { $set: { session_token, last_seen: new Date() } }
-          );
+        if (sess) {
+          await supabaseAdmin
+            .from('quiz_sessions')
+            .update({ session_token, last_seen: new Date().toISOString() })
+            .eq('participant_id', existing.id);
         }
         return NextResponse.json({
-          participant: sanitizeParticipant(participant),
+          participant: existing,
           session_token,
           returning: true,
         });
@@ -135,40 +117,47 @@ async function handler(request, ctx) {
 
       // Create new participant
       const assignedSet = randomSet();
-      const newParticipant = {
+      const newP = {
         id: uuidv4(),
         full_name: full_name.trim(),
         dob: dob || '',
         email: emailLc,
-        phone: String(phone).trim(),
+        phone: phoneStr,
         college: college || '',
         department: department || '',
         year: year || '',
         assigned_set: assignedSet,
-        created_at: new Date(),
       };
-      await db.collection('participants').insertOne(newParticipant);
-      const session_token = uuidv4();
+      const { data: inserted, error: insErr } = await supabaseAdmin
+        .from('participants')
+        .insert(newP)
+        .select()
+        .single();
+      if (insErr) throw insErr;
       return NextResponse.json({
-        participant: sanitizeParticipant(newParticipant),
-        session_token,
+        participant: inserted,
+        session_token: uuidv4(),
         returning: false,
       });
     }
 
-    // Get or start quiz session for participant
+    // ---------- QUIZ START ----------
     if (path === '/quiz/start' && method === 'POST') {
       const body = await request.json();
       const { participant_id, session_token } = body;
-      const participant = await db
-        .collection('participants')
-        .findOne({ id: participant_id });
+      const { data: participant } = await supabaseAdmin
+        .from('participants')
+        .select('*')
+        .eq('id', participant_id)
+        .maybeSingle();
       if (!participant) {
         return NextResponse.json({ error: 'Participant not found' }, { status: 404 });
       }
-      let session = await db
-        .collection('quiz_sessions')
-        .findOne({ participant_id });
+      let { data: session } = await supabaseAdmin
+        .from('quiz_sessions')
+        .select('*')
+        .eq('participant_id', participant_id)
+        .maybeSingle();
 
       if (session?.submitted) {
         return NextResponse.json({
@@ -180,110 +169,133 @@ async function handler(request, ctx) {
       if (!session) {
         const now = new Date();
         const ends_at = new Date(now.getTime() + QUIZ_DURATION_SEC * 1000);
-        session = {
+        const row = {
           id: uuidv4(),
           participant_id,
           assigned_set: participant.assigned_set,
-          started_at: now,
-          ends_at,
+          started_at: now.toISOString(),
+          ends_at: ends_at.toISOString(),
           answers: {},
           tab_switches: 0,
           submitted: false,
           session_token: session_token || uuidv4(),
-          last_seen: now,
+          last_seen: now.toISOString(),
         };
-        await db.collection('quiz_sessions').insertOne(session);
+        const { data: created, error: e2 } = await supabaseAdmin
+          .from('quiz_sessions')
+          .insert(row)
+          .select()
+          .single();
+        if (e2) throw e2;
+        session = created;
       } else {
-        // Update session token to enforce single active session
-        await db.collection('quiz_sessions').updateOne(
-          { participant_id },
-          { $set: { session_token: session_token || session.session_token, last_seen: new Date() } }
-        );
-        session.session_token = session_token || session.session_token;
+        await supabaseAdmin
+          .from('quiz_sessions')
+          .update({
+            session_token: session_token || session.session_token,
+            last_seen: new Date().toISOString(),
+          })
+          .eq('participant_id', participant_id);
+        if (session_token) session.session_token = session_token;
       }
 
-      const questions = await buildQuestionsForSet(db, participant.assigned_set);
+      const questions = await buildQuestionsForSet(participant.assigned_set);
 
       return NextResponse.json({
-        participant: sanitizeParticipant(participant),
-        session: sanitizeSession(session),
+        participant,
+        session,
         questions,
         server_time: new Date().toISOString(),
       });
     }
 
-    // Autosave a single answer
+    // ---------- ANSWER AUTOSAVE ----------
     if (path === '/quiz/answer' && method === 'POST') {
       const body = await request.json();
       const { participant_id, session_token, question_id, answer } = body;
-      const session = await db.collection('quiz_sessions').findOne({ participant_id });
+      const { data: session } = await supabaseAdmin
+        .from('quiz_sessions')
+        .select('*')
+        .eq('participant_id', participant_id)
+        .maybeSingle();
       if (!session) return NextResponse.json({ error: 'No session' }, { status: 404 });
       if (session.submitted) return NextResponse.json({ error: 'Already submitted' }, { status: 403 });
       if (session.session_token && session_token && session.session_token !== session_token) {
-        return NextResponse.json({ error: 'Session invalid – opened elsewhere', invalid_session: true }, { status: 401 });
+        return NextResponse.json({ error: 'Session invalid. Opened elsewhere.', invalid_session: true }, { status: 401 });
       }
-      const update = {};
-      update[`answers.${question_id}`] = answer;
-      await db.collection('quiz_sessions').updateOne(
-        { participant_id },
-        { $set: { ...update, last_seen: new Date() } }
-      );
+      const newAnswers = { ...(session.answers || {}), [question_id]: answer };
+      const { error: eUpd } = await supabaseAdmin
+        .from('quiz_sessions')
+        .update({ answers: newAnswers, last_seen: new Date().toISOString() })
+        .eq('participant_id', participant_id);
+      if (eUpd) throw eUpd;
       return NextResponse.json({ ok: true });
     }
 
-    // Tab switch increment
+    // ---------- TAB SWITCH ----------
     if (path === '/quiz/tabswitch' && method === 'POST') {
       const body = await request.json();
       const { participant_id } = body;
-      const session = await db.collection('quiz_sessions').findOne({ participant_id });
+      const { data: session } = await supabaseAdmin
+        .from('quiz_sessions')
+        .select('*')
+        .eq('participant_id', participant_id)
+        .maybeSingle();
       if (!session) return NextResponse.json({ error: 'No session' }, { status: 404 });
       if (session.submitted) return NextResponse.json({ ok: true, submitted: true });
       const newCount = (session.tab_switches || 0) + 1;
-      await db.collection('quiz_sessions').updateOne(
-        { participant_id },
-        { $set: { tab_switches: newCount, last_seen: new Date() } }
-      );
+      await supabaseAdmin
+        .from('quiz_sessions')
+        .update({ tab_switches: newCount, last_seen: new Date().toISOString() })
+        .eq('participant_id', participant_id);
       return NextResponse.json({ ok: true, tab_switches: newCount });
     }
 
-    // Submit quiz
+    // ---------- SUBMIT ----------
     if (path === '/quiz/submit' && method === 'POST') {
       const body = await request.json();
       const { participant_id, auto } = body;
-      const session = await db.collection('quiz_sessions').findOne({ participant_id });
+      const { data: session } = await supabaseAdmin
+        .from('quiz_sessions')
+        .select('*')
+        .eq('participant_id', participant_id)
+        .maybeSingle();
       if (!session) return NextResponse.json({ error: 'No session' }, { status: 404 });
       if (session.submitted) return NextResponse.json({ ok: true, already: true });
 
-      // Calculate score
       const questionIds = Object.keys(session.answers || {});
-      const allQuestions = await db
-        .collection('questions')
-        .find({ id: { $in: questionIds } })
-        .toArray();
+      let allQuestions = [];
+      if (questionIds.length > 0) {
+        const { data: qs } = await supabaseAdmin
+          .from('questions')
+          .select('id,correct_answer')
+          .in('id', questionIds);
+        allQuestions = qs || [];
+      }
       let score = 0;
       for (const q of allQuestions) {
         if (session.answers[q.id] && session.answers[q.id] === q.correct_answer) score += 1;
       }
-      // Total question count for participant's assigned set (set + 20 bonus)
-      const totalForSet = await db
-        .collection('questions')
-        .countDocuments({ set: { $in: [session.assigned_set, 'BONUS_RESEARCH', 'BONUS_STARTUP'] } });
+      const { count: totalForSet } = await supabaseAdmin
+        .from('questions')
+        .select('*', { count: 'exact', head: true })
+        .in('set', [session.assigned_set, 'BONUS_RESEARCH', 'BONUS_STARTUP']);
 
       const submitted_at = new Date();
-      const time_taken_seconds = Math.floor((submitted_at - new Date(session.started_at)) / 1000);
-      await db.collection('quiz_sessions').updateOne(
-        { participant_id },
-        {
-          $set: {
-            submitted: true,
-            submitted_at,
-            score,
-            total_questions: totalForSet,
-            time_taken_seconds,
-            auto_submitted: !!auto,
-          },
-        }
+      const time_taken_seconds = Math.floor(
+        (submitted_at.getTime() - new Date(session.started_at).getTime()) / 1000
       );
+      await supabaseAdmin
+        .from('quiz_sessions')
+        .update({
+          submitted: true,
+          submitted_at: submitted_at.toISOString(),
+          score,
+          total_questions: totalForSet || 0,
+          time_taken_seconds,
+          auto_submitted: !!auto,
+        })
+        .eq('participant_id', participant_id);
       return NextResponse.json({ ok: true });
     }
 
@@ -298,46 +310,49 @@ async function handler(request, ctx) {
     }
 
     if (path === '/admin/stats' && method === 'GET') {
-      const total = await db.collection('participants').countDocuments();
-      const inProgress = await db
-        .collection('quiz_sessions')
-        .countDocuments({ submitted: false });
-      const completed = await db
-        .collection('quiz_sessions')
-        .countDocuments({ submitted: true });
-      return NextResponse.json({ total, in_progress: inProgress, completed });
+      const [{ count: total }, { count: inProgress }, { count: completed }] = await Promise.all([
+        supabaseAdmin.from('participants').select('*', { count: 'exact', head: true }),
+        supabaseAdmin.from('quiz_sessions').select('*', { count: 'exact', head: true }).eq('submitted', false),
+        supabaseAdmin.from('quiz_sessions').select('*', { count: 'exact', head: true }).eq('submitted', true),
+      ]);
+      return NextResponse.json({
+        total: total || 0,
+        in_progress: inProgress || 0,
+        completed: completed || 0,
+      });
     }
 
     if (path === '/admin/participants' && method === 'GET') {
       const search = url.searchParams.get('search') || '';
-      const query = {};
+      let query = supabaseAdmin
+        .from('participants')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(2000);
       if (search.trim()) {
-        const rx = new RegExp(search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-        query.$or = [
-          { full_name: rx },
-          { email: rx },
-          { phone: rx },
-          { department: rx },
-          { college: rx },
-        ];
+        const s = search.trim();
+        // OR filter with ilike across multiple fields
+        query = query.or(
+          `full_name.ilike.%${s}%,email.ilike.%${s}%,phone.ilike.%${s}%,department.ilike.%${s}%,college.ilike.%${s}%`
+        );
       }
-      const participants = await db
-        .collection('participants')
-        .find(query)
-        .sort({ created_at: -1 })
-        .limit(2000)
-        .toArray();
+      const { data: participants, error } = await query;
+      if (error) throw error;
 
-      const ids = participants.map((p) => p.id);
-      const sessions = await db
-        .collection('quiz_sessions')
-        .find({ participant_id: { $in: ids } })
-        .toArray();
-      const sessionMap = {};
-      for (const s of sessions) sessionMap[s.participant_id] = s;
+      const ids = (participants || []).map((p) => p.id);
+      let sessions = [];
+      if (ids.length > 0) {
+        const { data: sList } = await supabaseAdmin
+          .from('quiz_sessions')
+          .select('*')
+          .in('participant_id', ids);
+        sessions = sList || [];
+      }
+      const sMap = {};
+      sessions.forEach((s) => (sMap[s.participant_id] = s));
 
-      const rows = participants.map((p) => {
-        const s = sessionMap[p.id];
+      const rows = (participants || []).map((p) => {
+        const s = sMap[p.id];
         return {
           id: p.id,
           full_name: p.full_name,
@@ -361,20 +376,22 @@ async function handler(request, ctx) {
     }
 
     if (path === '/admin/leaderboard' && method === 'GET') {
-      const sessions = await db
-        .collection('quiz_sessions')
-        .find({ submitted: true })
-        .sort({ score: -1, time_taken_seconds: 1 })
-        .limit(100)
-        .toArray();
-      const pids = sessions.map((s) => s.participant_id);
-      const participants = await db
-        .collection('participants')
-        .find({ id: { $in: pids } })
-        .toArray();
+      const { data: sessions } = await supabaseAdmin
+        .from('quiz_sessions')
+        .select('*')
+        .eq('submitted', true)
+        .order('score', { ascending: false })
+        .order('time_taken_seconds', { ascending: true })
+        .limit(100);
+      const pids = (sessions || []).map((s) => s.participant_id);
+      let pList = [];
+      if (pids.length > 0) {
+        const { data } = await supabaseAdmin.from('participants').select('*').in('id', pids);
+        pList = data || [];
+      }
       const pMap = {};
-      participants.forEach((p) => (pMap[p.id] = p));
-      const rows = sessions.map((s, i) => ({
+      pList.forEach((p) => (pMap[p.id] = p));
+      const rows = (sessions || []).map((s, i) => ({
         rank: i + 1,
         full_name: pMap[s.participant_id]?.full_name || '-',
         college: pMap[s.participant_id]?.college || '-',
@@ -388,10 +405,10 @@ async function handler(request, ctx) {
     }
 
     if (path === '/admin/export' && method === 'GET') {
-      const participants = await db.collection('participants').find({}).toArray();
-      const sessions = await db.collection('quiz_sessions').find({}).toArray();
+      const { data: participants } = await supabaseAdmin.from('participants').select('*');
+      const { data: sessions } = await supabaseAdmin.from('quiz_sessions').select('*');
       const sMap = {};
-      sessions.forEach((s) => (sMap[s.participant_id] = s));
+      (sessions || []).forEach((s) => (sMap[s.participant_id] = s));
       const headers = [
         'Full Name','Email','Phone','College','Department','Year','Assigned Set',
         'Status','Score','Total Questions','Time Taken (sec)','Tab Switches',
@@ -406,7 +423,7 @@ async function handler(request, ctx) {
         return s;
       };
       const lines = [headers.join(',')];
-      for (const p of participants) {
+      for (const p of participants || []) {
         const s = sMap[p.id];
         lines.push([
           p.full_name, p.email, p.phone, p.college, p.department, p.year,
