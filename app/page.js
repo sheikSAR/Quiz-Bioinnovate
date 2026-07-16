@@ -479,25 +479,6 @@ function AdminLogin({ onSuccess, onBack }) {
     </div>
   );
 }
-  return (
-    <div className="min-h-screen grid place-items-center bg-slate-100 dark:bg-slate-950 px-4">
-      <Card className="w-full max-w-md border-2 shadow-xl">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2"><LockKeyhole className="h-5 w-5" /> Admin Login</CardTitle>
-          <CardDescription>Restricted access. Event organizers only.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={submit} className="space-y-4">
-            <div><Label>Username</Label><Input value={u} onChange={(e) => setU(e.target.value)} required /></div>
-            <div><Label>Password</Label><Input type="password" value={p} onChange={(e) => setP(e.target.value)} required /></div>
-            <Button type="submit" className="w-full" disabled={loading}>{loading ? 'Signing in…' : 'Sign In'}</Button>
-            <Button type="button" variant="ghost" className="w-full" onClick={onBack}>Back to home</Button>
-          </form>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
 
 function AdminDashboard({ onLogout }) {
   const [stats, setStats] = useState({ total: 0, in_progress: 0, completed: 0 });
