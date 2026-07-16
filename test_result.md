@@ -111,5 +111,109 @@ Next.js 15 + MongoDB + Tailwind + shadcn/ui
 ### Backend Status: FULLY FUNCTIONAL ✅
 All critical backend flows are working correctly with no major issues found.
 
-## Pending / To-Do
-- Frontend E2E test (only after user permission)
+## Comprehensive Frontend E2E Testing — COMPLETED ✅
+
+### Test Suite Execution
+**Date:** 2025-01-16  
+**Result:** ALL TESTS PASSED (100% Success Rate)  
+**Test Method:** Python Playwright automation scripts
+**URL Tested:** https://quiz-compete-15.preview.emergentagent.com
+
+### Tests Performed & Results:
+
+#### 1. Landing Page (/) — ✅ PASSED
+- ✅ "The Ultimate MCQ Challenge" heading displayed correctly
+- ✅ "Start Quiz" CTA button present and functional
+- ✅ Three feature cards present: "15 Min Timer", "3 Random Sets", "Live Leaderboard"
+- ✅ Admin button visible in top-right corner
+- ✅ Clicking "Start Quiz" navigates to registration form
+
+#### 2. Registration Flow — ✅ PASSED
+- ✅ All form fields work correctly (full_name, email, phone, dob, college, department, year)
+- ✅ Form submission successful with unique email (fe_test_1784168496@example.com)
+- ✅ Success toast appears after registration
+- ✅ Navigates to quiz page after successful registration
+- ✅ localStorage correctly stores 'quiz_participant' and 'quiz_session_token'
+- ✅ Form validation works (error toast appears for re-registration attempts)
+- ✅ Re-registration with same email/phone is blocked with appropriate error message
+
+#### 3. Quiz Page — ✅ PASSED
+- ✅ 30 questions loaded successfully (all 30 palette buttons present)
+- ✅ Top bar displays correctly:
+  - Set badge (A/B/C) visible
+  - Participant name displayed
+  - Timer counting down from ~15:00
+  - Progress bar showing completion percentage
+- ✅ Answer selection works (option highlights in indigo color)
+- ✅ Palette button turns indigo when question is answered
+- ✅ "Next" button navigates to next question
+- ✅ "Previous" button navigates to previous question
+- ✅ Answer selection preserved when navigating between questions
+- ✅ **Refresh persistence verified**: Answers preserved after page reload, timer continues counting (14:54 → 14:50)
+- ✅ Palette navigation works (clicking #15 jumps directly to Q15)
+- ✅ Right-click disabled (context menu prevention active)
+- ✅ Last question (Q30) shows green "Submit Quiz" button
+- ✅ Submit Quiz works and displays thank you page
+- ✅ "Answered: X/30" counter updates correctly
+
+#### 4. Anti-Cheating: Tab Switching — ✅ PASSED
+- ✅ First tab switch triggers warning badge "Tab warnings: 1/2"
+- ✅ Second tab switch updates badge to "Tab warnings: 2/2"
+- ✅ Third tab switch auto-submits quiz and shows thank you page
+- ✅ Warning toast appears on each tab switch
+- ✅ Auto-submit message: "Tab switched more than 2 times — auto-submitting"
+
+#### 5. Admin Dashboard — ✅ PASSED
+- ✅ Admin login form appears when clicking Admin button from landing page
+- ✅ Wrong credentials (admin/wrong) show error toast "Invalid credentials"
+- ✅ Correct credentials (admin/admin123) login successfully
+- ✅ Dashboard loads with "Quiz Arena — Admin" header
+- ✅ Three stat cards display correctly:
+  - Total Registrations: 7
+  - Currently Taking Quiz: 1
+  - Completed: 4
+- ✅ Participants table displays with all required columns:
+  - Name, Email, Phone, College, Dept, Set, Status, Score, Time, Tabs
+- ✅ Search functionality works (filtering by "FE Test" shows correct results)
+- ✅ Leaderboard tab loads successfully
+- ✅ Leaderboard displays:
+  - Rank column with correct numbering
+  - Medal emojis for top 3 (🥇🥈🥉)
+  - Sorted by score DESC, then time ASC
+- ✅ Export CSV button present and visible
+- ✅ Logout works and returns to landing page
+
+#### 6. Mobile Responsiveness — ✅ PASSED
+- ✅ Landing page renders correctly on mobile viewport (375x812)
+- ✅ Layout doesn't break on mobile
+- ✅ Text is readable and properly sized
+- ✅ Single-column feature cards display correctly
+
+### Key Frontend Validations Confirmed:
+- ✅ Client-side routing works correctly (landing → register → quiz → thankyou → admin)
+- ✅ localStorage persistence for session management
+- ✅ Real-time timer countdown with server-side synchronization
+- ✅ Answer auto-save functionality working
+- ✅ Tab-switch detection and auto-submit mechanism functional
+- ✅ Admin authentication and authorization working
+- ✅ Search and filter functionality in admin panel
+- ✅ Responsive design for mobile devices
+- ✅ Toast notifications (Sonner) working for all user feedback
+- ✅ No critical console errors or network failures blocking functionality
+
+### Frontend Status: FULLY FUNCTIONAL ✅
+All critical frontend flows are working correctly with no major issues found. The application is production-ready for the college event.
+
+### Screenshots Captured:
+- Landing page (desktop & mobile)
+- Registration form
+- Quiz page with questions and palette
+- Thank you page after submission
+- Tab switch auto-submit
+- Admin login
+- Admin dashboard with stats
+- Participants table with search
+- Leaderboard with medals
+
+## Overall Application Status: PRODUCTION READY ✅
+Both backend (21/21 tests) and frontend (all E2E flows) are fully functional with no critical issues.
