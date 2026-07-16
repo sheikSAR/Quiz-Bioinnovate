@@ -31,7 +31,8 @@ A responsive, mobile-friendly web application for a live one-day MCQ quiz compet
 - Prevents re-taking after submission
 
 ### Admin Dashboard (`/admin`)
-- Login with `admin` / `admin123` (overridable via env vars)
+- Login with `admin@blude.local` / `admin123` (overridable via `ADMIN_EMAIL` / `ADMIN_PASSWORD` env vars)
+- **Admin auth is powered by Supabase Auth.** The admin user is auto-provisioned on first login with the configured env credentials. All admin API endpoints require a valid Supabase JWT (Bearer token).
 - Live stats: total registrations, in-progress, completed (auto-refresh 8s)
 - Participant table with search (name, email, phone, department, college)
 - Leaderboard sorted by score DESC then time_taken ASC (medals for top 3)

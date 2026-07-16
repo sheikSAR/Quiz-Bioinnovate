@@ -6,8 +6,8 @@ import { RAW_QUESTIONS } from '@/lib/questions_seed';
 export const dynamic = 'force-dynamic';
 
 const QUIZ_DURATION_SEC = 15 * 60; // 15 minutes
-const ADMIN_USER = process.env.ADMIN_USERNAME || 'admin';
-const ADMIN_PASS = process.env.ADMIN_PASSWORD || 'admin123';
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@blude.local';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 
 let seededOnce = false;
 
@@ -17,8 +17,7 @@ async function seedIfNeeded() {
     .from('questions')
     .select('*', { count: 'exact', head: true });
   if (error) {
-    // Table probably doesn't exist yet. Surface a clear error upstream.
-    throw new Error('Supabase schema not initialized. Please run /app/supabase/schema.sql in Supabase SQL Editor. Original error: ' + error.message);
+    throw new Error('Supabase schema not initialized. Run supabase/schema.sql in the SQL Editor. Detail: ' + error.message);
   }
   if ((count || 0) === 0) {
     const rows = RAW_QUESTIONS.map((r) => ({
@@ -45,7 +44,6 @@ async function buildQuestionsForSet(setLetter) {
     .order('set', { ascending: true })
     .order('question_number', { ascending: true });
   if (error) throw error;
-  // Ensure participant's set questions come first, then bonus rounds
   const own = (data || []).filter((q) => q.set === setLetter);
   const bonus = (data || []).filter((q) => q.set !== setLetter);
   return [...own, ...bonus];
@@ -54,6 +52,38 @@ async function buildQuestionsForSet(setLetter) {
 function randomSet() {
   const sets = ['A', 'B', 'C'];
   return sets[Math.floor(Math.random() * sets.length)];
+}
+
+// --------- Supabase Auth helpers for admin ---------
+async function ensureAdminUserExists() {
+  // Idempotent: try to create the admin user; if it exists, ignore.
+  try {
+    const { data: list } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 200 });
+    const exists = (list?.users || []).some((u) => u.email === ADMIN_EMAIL);
+    if (exists) return;
+    await supabaseAdmin.auth.admin.createUser({
+      email: ADMIN_EMAIL,
+      password: ADMIN_PASSWORD,
+      email_confirm: true,
+      user_metadata: { role: 'admin' },
+    });
+  } catch (e) {
+    console.warn('ensureAdminUserExists warning:', e?.message || e);
+  }
+}
+
+async function verifyAdminToken(request) {
+  const auth = request.headers.get('authorization') || '';
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
+  if (!token) return null;
+  const { data, error } = await supabaseAdmin.auth.getUser(token);
+  if (error || !data?.user) return null;
+  if (data.user.email !== ADMIN_EMAIL) return null;
+  return data.user;
+}
+
+function unauthorized() {
+  return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 }
 
 async function handler(request, ctx) {
@@ -65,7 +95,7 @@ async function handler(request, ctx) {
 
   try {
     if (path === '/' || path === '') {
-      return NextResponse.json({ status: 'ok', service: 'blude-quiz-api', provider: 'supabase' });
+      return NextResponse.json({ status: 'ok', service: 'blude-quiz-api', provider: 'supabase', auth: 'supabase' });
     }
 
     await seedIfNeeded();
@@ -80,7 +110,6 @@ async function handler(request, ctx) {
       const emailLc = String(email).toLowerCase().trim();
       const phoneStr = String(phone).trim();
 
-      // Try to find existing participant by email OR phone
       const { data: existingList } = await supabaseAdmin
         .from('participants')
         .select('*')
@@ -89,7 +118,6 @@ async function handler(request, ctx) {
       const existing = existingList && existingList[0];
 
       if (existing) {
-        // Check if already submitted
         const { data: sess } = await supabaseAdmin
           .from('quiz_sessions')
           .select('*')
@@ -115,7 +143,6 @@ async function handler(request, ctx) {
         });
       }
 
-      // Create new participant
       const assignedSet = randomSet();
       const newP = {
         id: uuidv4(),
@@ -150,9 +177,7 @@ async function handler(request, ctx) {
         .select('*')
         .eq('id', participant_id)
         .maybeSingle();
-      if (!participant) {
-        return NextResponse.json({ error: 'Participant not found' }, { status: 404 });
-      }
+      if (!participant) return NextResponse.json({ error: 'Participant not found' }, { status: 404 });
       let { data: session } = await supabaseAdmin
         .from('quiz_sessions')
         .select('*')
@@ -160,10 +185,7 @@ async function handler(request, ctx) {
         .maybeSingle();
 
       if (session?.submitted) {
-        return NextResponse.json({
-          error: 'Quiz already submitted',
-          already_submitted: true,
-        }, { status: 403 });
+        return NextResponse.json({ error: 'Quiz already submitted', already_submitted: true }, { status: 403 });
       }
 
       if (!session) {
@@ -191,25 +213,15 @@ async function handler(request, ctx) {
       } else {
         await supabaseAdmin
           .from('quiz_sessions')
-          .update({
-            session_token: session_token || session.session_token,
-            last_seen: new Date().toISOString(),
-          })
+          .update({ session_token: session_token || session.session_token, last_seen: new Date().toISOString() })
           .eq('participant_id', participant_id);
         if (session_token) session.session_token = session_token;
       }
 
       const questions = await buildQuestionsForSet(participant.assigned_set);
-
-      return NextResponse.json({
-        participant,
-        session,
-        questions,
-        server_time: new Date().toISOString(),
-      });
+      return NextResponse.json({ participant, session, questions, server_time: new Date().toISOString() });
     }
 
-    // ---------- ANSWER AUTOSAVE ----------
     if (path === '/quiz/answer' && method === 'POST') {
       const body = await request.json();
       const { participant_id, session_token, question_id, answer } = body;
@@ -232,7 +244,6 @@ async function handler(request, ctx) {
       return NextResponse.json({ ok: true });
     }
 
-    // ---------- TAB SWITCH ----------
     if (path === '/quiz/tabswitch' && method === 'POST') {
       const body = await request.json();
       const { participant_id } = body;
@@ -251,7 +262,6 @@ async function handler(request, ctx) {
       return NextResponse.json({ ok: true, tab_switches: newCount });
     }
 
-    // ---------- SUBMIT ----------
     if (path === '/quiz/submit' && method === 'POST') {
       const body = await request.json();
       const { participant_id, auto } = body;
@@ -299,14 +309,39 @@ async function handler(request, ctx) {
       return NextResponse.json({ ok: true });
     }
 
-    // ---------- ADMIN ----------
+    // ---------- ADMIN (Supabase Auth) ----------
     if (path === '/admin/login' && method === 'POST') {
       const body = await request.json();
-      const { username, password } = body;
-      if (username === ADMIN_USER && password === ADMIN_PASS) {
-        return NextResponse.json({ ok: true, token: 'admin_' + uuidv4() });
+      // Accept both {email,password} and legacy {username,password}
+      const email = (body.email || body.username || '').trim().toLowerCase();
+      const password = body.password || '';
+
+      // Auto-bootstrap the admin user on first login attempt with matching env creds
+      if (email === ADMIN_EMAIL.toLowerCase() && password === ADMIN_PASSWORD) {
+        await ensureAdminUserExists();
       }
-      return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
+
+      const { data, error } = await supabaseAdmin.auth.signInWithPassword({ email, password });
+      if (error || !data?.session) {
+        return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
+      }
+      // Guard: only allow the configured admin email to proceed as admin
+      if (data.user?.email !== ADMIN_EMAIL) {
+        return NextResponse.json({ error: 'Not an admin' }, { status: 403 });
+      }
+      return NextResponse.json({
+        ok: true,
+        token: data.session.access_token,
+        refresh_token: data.session.refresh_token,
+        expires_at: data.session.expires_at,
+        user: { email: data.user.email, id: data.user.id },
+      });
+    }
+
+    // All /admin/* routes below require a valid Supabase Auth JWT
+    if (path.startsWith('/admin/')) {
+      const adminUser = await verifyAdminToken(request);
+      if (!adminUser) return unauthorized();
     }
 
     if (path === '/admin/stats' && method === 'GET') {
@@ -331,7 +366,6 @@ async function handler(request, ctx) {
         .limit(2000);
       if (search.trim()) {
         const s = search.trim();
-        // OR filter with ilike across multiple fields
         query = query.or(
           `full_name.ilike.%${s}%,email.ilike.%${s}%,phone.ilike.%${s}%,department.ilike.%${s}%,college.ilike.%${s}%`
         );

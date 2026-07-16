@@ -441,7 +441,7 @@ function ThankYou() {
 
 // -------------------- ADMIN --------------------
 function AdminLogin({ onSuccess, onBack }) {
-  const [u, setU] = useState('');
+  const [email, setEmail] = useState('');
   const [p, setP] = useState('');
   const [loading, setLoading] = useState(false);
   const submit = async (e) => {
@@ -451,14 +451,34 @@ function AdminLogin({ onSuccess, onBack }) {
       const res = await fetch('/api/admin/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: u, password: p }),
+        body: JSON.stringify({ email, password: p }),
       });
       const data = await res.json();
       if (!res.ok) { toast.error(data.error || 'Login failed'); return; }
       localStorage.setItem(LS_ADMIN, data.token);
+      toast.success('Signed in as ' + (data.user?.email || 'admin'));
       onSuccess();
     } finally { setLoading(false); }
   };
+  return (
+    <div className="min-h-screen grid place-items-center bg-slate-100 dark:bg-slate-950 px-4">
+      <Card className="w-full max-w-md border-2 shadow-xl">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2"><LockKeyhole className="h-5 w-5" /> Admin Login</CardTitle>
+          <CardDescription>Restricted access. Event organizers only.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={submit} className="space-y-4">
+            <div><Label>Email</Label><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="admin@blude.local" required /></div>
+            <div><Label>Password</Label><Input type="password" value={p} onChange={(e) => setP(e.target.value)} required /></div>
+            <Button type="submit" className="w-full" disabled={loading}>{loading ? 'Signing in...' : 'Sign In'}</Button>
+            <Button type="button" variant="ghost" className="w-full" onClick={onBack}>Back to home</Button>
+          </form>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
   return (
     <div className="min-h-screen grid place-items-center bg-slate-100 dark:bg-slate-950 px-4">
       <Card className="w-full max-w-md border-2 shadow-xl">
@@ -487,11 +507,19 @@ function AdminDashboard({ onLogout }) {
   const [tab, setTab] = useState('participants');
 
   const loadAll = useCallback(async () => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem(LS_ADMIN) : '';
+    const authHeaders = { headers: { Authorization: 'Bearer ' + (token || '') } };
     const [s, p, lb] = await Promise.all([
-      fetch('/api/admin/stats').then((r) => r.json()),
-      fetch('/api/admin/participants?search=' + encodeURIComponent(search)).then((r) => r.json()),
-      fetch('/api/admin/leaderboard').then((r) => r.json()),
+      fetch('/api/admin/stats', authHeaders).then((r) => r.json()),
+      fetch('/api/admin/participants?search=' + encodeURIComponent(search), authHeaders).then((r) => r.json()),
+      fetch('/api/admin/leaderboard', authHeaders).then((r) => r.json()),
     ]);
+    if (s?.error === 'Unauthorized' || p?.error === 'Unauthorized') {
+      localStorage.removeItem(LS_ADMIN);
+      toast.error('Session expired. Please sign in again.');
+      window.location.reload();
+      return;
+    }
     setStats(s);
     setRows(p.rows || []);
     setLeaderboard(lb.rows || []);
@@ -517,7 +545,17 @@ function AdminDashboard({ onLogout }) {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => window.open('/api/admin/export', '_blank')}>
+            <Button variant="outline" onClick={async () => {
+              const token = localStorage.getItem(LS_ADMIN);
+              const res = await fetch('/api/admin/export', { headers: { Authorization: 'Bearer ' + (token || '') } });
+              if (!res.ok) { toast.error('Export failed. Please re-login.'); return; }
+              const blob = await res.blob();
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url; a.download = 'quiz_results.csv';
+              document.body.appendChild(a); a.click(); a.remove();
+              URL.revokeObjectURL(url);
+            }}>
               <Download className="h-4 w-4 mr-2" /> Export CSV
             </Button>
             <Button variant="ghost" onClick={onLogout}><LogOut className="h-4 w-4 mr-1" /> Logout</Button>

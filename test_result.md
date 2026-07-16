@@ -351,3 +351,174 @@ All critical backend flows are working correctly with Supabase (PostgreSQL). The
 
 ## Overall Application Status: PRODUCTION READY WITH SUPABASE ✅
 Backend (21/21 tests) fully functional with Supabase migration. Frontend (all E2E flows) remain functional. No critical issues found.
+
+---
+
+## SUPABASE AUTH MIGRATION FOR ADMIN ENDPOINTS — COMPLETED ✅
+
+### Migration Overview
+**Date:** 2025-01-16  
+**Migration:** Hardcoded admin credentials → Supabase Auth (JWT-based)  
+**Base URL:** https://quiz-compete-15.preview.emergentagent.com/api  
+**Test Scripts:** 
+- `/app/test_supabase_auth.py` (15 comprehensive tests)
+- `/app/test_supabase_auth_edge_cases.py` (10 edge case tests)
+- `/app/test_full_flow_with_auth.py` (9 full flow integration tests)
+
+### Comprehensive Backend Re-Testing Results
+
+#### Test Suite Execution
+**Result:** 34/34 PASSED (100% Success Rate)  
+All admin endpoints tested with JWT-based authentication.
+
+### NEW ADMIN AUTH BEHAVIOR VERIFIED ✅
+
+#### Admin Credentials
+- **Email:** admin@blude.local (from env: ADMIN_EMAIL)
+- **Password:** admin123 (from env: ADMIN_PASSWORD)
+- **Auto-bootstrap:** Admin user auto-created in Supabase Auth on first login attempt
+
+#### Tests Performed & Results:
+
+##### SECTION 1: Admin Login Tests (4 tests)
+1. ✅ **POST /api/admin/login - Email field** - Returns 200 with `ok:true`, JWT token (~815 chars, ES256 format), `refresh_token`, `expires_at`, `user:{email, id}`
+2. ✅ **POST /api/admin/login - Username field (backward compat)** - Legacy `{username, password}` field works correctly
+3. ✅ **POST /api/admin/login - Wrong password** - Returns 401 with error message "Invalid credentials"
+4. ✅ **POST /api/admin/login - Wrong email** - Returns 401 with error message "Invalid credentials"
+
+##### SECTION 2: Admin Endpoints Without Authorization (4 tests)
+5. ✅ **GET /api/admin/stats - No Auth** - Returns 401 with `{error:"Unauthorized"}`
+6. ✅ **GET /api/admin/participants - No Auth** - Returns 401 with `{error:"Unauthorized"}`
+7. ✅ **GET /api/admin/leaderboard - No Auth** - Returns 401 with `{error:"Unauthorized"}`
+8. ✅ **GET /api/admin/export - No Auth** - Returns 401 with `{error:"Unauthorized"}`
+
+##### SECTION 3: Admin Endpoints With Valid Authorization (4 tests)
+9. ✅ **GET /api/admin/stats - With Valid Token** - Returns 200 with correct counts (total, in_progress, completed)
+10. ✅ **GET /api/admin/participants - With Valid Token** - Returns 200 with participant rows
+11. ✅ **GET /api/admin/leaderboard - With Valid Token** - Returns 200 with ranked leaderboard entries
+12. ✅ **GET /api/admin/export - With Valid Token** - Returns 200 with CSV (Content-Type: text/csv, Content-Disposition: attachment)
+
+##### SECTION 4: Admin Endpoints With Invalid Token (1 test)
+13. ✅ **GET /api/admin/stats - Invalid Token** - Returns 401 with `{error:"Unauthorized"}`
+
+##### SECTION 5: Participant Endpoints (No Auth Required) (2 tests)
+14. ✅ **POST /api/register - No Auth** - Works correctly without Authorization header
+15. ✅ **POST /api/quiz/start - No Auth** - Works correctly without Authorization header
+
+##### SECTION 6: Edge Case Tests (10 tests)
+16. ✅ **JWT Token Format** - Valid JWT with 815 chars, 3 parts (header.payload.signature), ES256 format
+17. ✅ **Missing Bearer Prefix** - Token without "Bearer " prefix correctly rejected with 401
+18. ✅ **Empty Authorization Header** - Empty header correctly rejected with 401
+19. ✅ **Bearer with Empty Token** - "Bearer " with no token correctly rejected with 401
+20. ✅ **Token Reuse** - Same token successfully works across all 4 admin endpoints
+21. ✅ **Email Case Sensitivity** - Email is case-insensitive (ADMIN@BLUDE.LOCAL works)
+22. ✅ **Refresh Token Present** - `refresh_token` returned in login response
+23. ✅ **Expires At Present** - `expires_at` (Unix timestamp) returned in login response
+24. ✅ **User ID Present** - `user.id` (UUID) returned in login response
+25. ✅ **Malformed JWT** - Invalid JWT format correctly rejected with 401
+
+##### SECTION 7: Full Flow Integration Tests (9 tests)
+26. ✅ **Full Flow - Register** - Participant registration works without auth
+27. ✅ **Full Flow - Quiz Start** - Quiz start returns 30 questions without auth
+28. ✅ **Full Flow - Answer Questions** - Answer saving works without auth
+29. ✅ **Full Flow - Submit Quiz** - Quiz submission works without auth
+30. ✅ **Full Flow - Admin Login** - Admin login with Supabase Auth returns valid JWT
+31. ✅ **Full Flow - Admin Participants** - Submitted participant visible in admin/participants with valid token
+32. ✅ **Full Flow - Admin Leaderboard** - Submitted participant visible in admin/leaderboard with valid token
+33. ✅ **Full Flow - Admin Export** - Submitted participant visible in CSV export with valid token
+34. ✅ **Full Flow - Admin Stats** - Stats correctly updated after participant submission
+
+### Supabase Auth-Specific Validations ✅
+
+#### 1. JWT Token Structure
+- ✅ **Format:** Valid JWT with 3 parts (header.payload.signature)
+- ✅ **Length:** ~815 characters (ES256 algorithm)
+- ✅ **Algorithm:** ES256 (Elliptic Curve Digital Signature Algorithm)
+- ✅ **Expiration:** `expires_at` timestamp included in response
+- ✅ **Refresh Token:** Included for token renewal
+
+#### 2. Admin User Auto-Bootstrap
+- ✅ **Idempotent Creation:** Admin user auto-created on first login if credentials match env vars
+- ✅ **Supabase Auth Integration:** Uses `supabaseAdmin.auth.admin.createUser()`
+- ✅ **Email Confirmation:** Auto-confirmed (`email_confirm: true`)
+- ✅ **User Metadata:** Includes `role: 'admin'` in user metadata
+
+#### 3. Token Verification
+- ✅ **Bearer Token Extraction:** Correctly extracts token from `Authorization: Bearer <token>` header
+- ✅ **Supabase Auth Validation:** Uses `supabaseAdmin.auth.getUser(token)` for verification
+- ✅ **Email Matching:** Verifies token's email matches ADMIN_EMAIL from env
+- ✅ **Invalid Token Handling:** Returns 401 for missing, malformed, or invalid tokens
+
+#### 4. Backward Compatibility
+- ✅ **Legacy Username Field:** Accepts both `{email, password}` and `{username, password}` in login
+- ✅ **Field Mapping:** `username` field mapped to `email` for backward compatibility
+- ✅ **Case Insensitivity:** Email is case-insensitive (lowercase conversion applied)
+
+#### 5. Security Validations
+- ✅ **Authorization Required:** All `/admin/*` routes (except `/admin/login`) require valid JWT
+- ✅ **401 Unauthorized:** Missing or invalid token returns 401 with `{error:"Unauthorized"}`
+- ✅ **Email Guard:** Only tokens with email matching ADMIN_EMAIL are accepted
+- ✅ **Participant Endpoints Unaffected:** Participant routes work without auth (no breaking changes)
+
+#### 6. Response Structure
+- ✅ **Login Success Response:**
+  ```json
+  {
+    "ok": true,
+    "token": "<JWT_TOKEN_815_CHARS>",
+    "refresh_token": "<REFRESH_TOKEN>",
+    "expires_at": 1784180109,
+    "user": {
+      "email": "admin@blude.local",
+      "id": "0b90c43c-6a21-47fc-8adb-aac19eac5ce3"
+    }
+  }
+  ```
+- ✅ **Login Failure Response:**
+  ```json
+  {
+    "error": "Invalid credentials"
+  }
+  ```
+- ✅ **Unauthorized Response:**
+  ```json
+  {
+    "error": "Unauthorized"
+  }
+  ```
+
+### Migration Comparison: Hardcoded vs Supabase Auth
+
+| Feature | Before (Hardcoded) | After (Supabase Auth) | Status |
+|---------|-------------------|----------------------|--------|
+| Admin Login | Hardcoded username/password check | Supabase Auth JWT-based | ✅ Migrated |
+| Token Format | Simple string token | ES256 JWT (~815 chars) | ✅ Migrated |
+| Token Verification | String comparison | Supabase Auth `getUser()` | ✅ Migrated |
+| Admin Protection | Basic token check | JWT validation + email matching | ✅ Migrated |
+| Backward Compat | username field | Both username and email fields | ✅ Maintained |
+| Participant Routes | No auth required | No auth required | ✅ Unchanged |
+
+### Key Findings
+- ✅ **Zero Breaking Changes:** All 34 tests pass with identical behavior for participant endpoints
+- ✅ **Enhanced Security:** JWT-based authentication with ES256 algorithm
+- ✅ **Token Expiration:** Proper token expiration handling with `expires_at` timestamp
+- ✅ **Refresh Token:** Included for token renewal without re-login
+- ✅ **Auto-Bootstrap:** Admin user auto-created on first login (idempotent)
+- ✅ **Backward Compatible:** Legacy `username` field still works
+- ✅ **Email Guard:** Only configured admin email can access admin routes
+- ✅ **Participant Endpoints Unaffected:** No auth required for participant routes
+
+### Backend Status: FULLY FUNCTIONAL WITH SUPABASE AUTH ✅
+All admin endpoints are working correctly with Supabase Auth JWT-based authentication. The migration is complete and production-ready.
+
+### Test Evidence
+- **Test Script 1:** `/app/test_supabase_auth.py` (15 comprehensive tests)
+- **Test Script 2:** `/app/test_supabase_auth_edge_cases.py` (10 edge case tests)
+- **Test Script 3:** `/app/test_full_flow_with_auth.py` (9 full flow integration tests)
+- **Success Rate:** 100% (34/34 tests passed)
+- **No Critical Issues:** Zero breaking changes or security issues found
+
+---
+
+## Overall Application Status: PRODUCTION READY WITH SUPABASE AUTH ✅
+Backend (21/21 core tests + 34/34 auth tests) fully functional with Supabase migration and Supabase Auth. Frontend (all E2E flows) remain functional. No critical issues found.

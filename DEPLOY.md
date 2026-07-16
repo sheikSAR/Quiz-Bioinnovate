@@ -55,8 +55,10 @@ git push -u origin main
    | `SUPABASE_URL` | `https://<your-project-ref>.supabase.co` |
    | `SUPABASE_SERVICE_ROLE_KEY` | `eyJhbG...` (the service_role key) |
    | `SUPABASE_ANON_KEY` | `eyJhbG...` (the anon key, optional) |
-   | `ADMIN_USERNAME` | `admin` (or your custom admin username) |
-   | `ADMIN_PASSWORD` | choose a strong password |
+   | `ADMIN_EMAIL` | `admin@blude.local` (or your email) |
+   | `ADMIN_PASSWORD` | choose a strong password (min 6 chars) |
+
+   > **Admin authentication uses Supabase Auth.** On the first admin login attempt with the credentials above, the app will automatically create a Supabase Auth user with that email/password. All admin API endpoints require a valid Supabase JWT (issued at login).
 
 5. Click **Deploy**. Wait ~2 minutes.
 6. Once deployed, open your Vercel URL. On first load the app will auto-seed the 50 quiz questions.
