@@ -1,119 +1,125 @@
-# College Event MCQ Quiz Competition
+# BLUDE Quiz - MCQ Competition Platform
 
-A responsive, mobile-friendly web application for running a live one-day MCQ quiz competition.
+A responsive, mobile-friendly web application for a live one-day MCQ quiz competition, ready for 1,000 concurrent participants.
 
 ## Tech Stack
 
 - **Frontend:** Next.js 15 (App Router) + Tailwind CSS + shadcn/ui + lucide-react + sonner
 - **Backend:** Next.js API Routes (Node.js)
-- **Database:** MongoDB (via `mongodb` driver)
-- **Auth:** Simple participant identification (email + phone) + admin login (username/password)
-
-> The initial spec suggested Supabase/PostgreSQL, but this MVP uses the template's MongoDB stack for fastest time-to-value while covering **all functional requirements**. The `README (Vercel/Supabase)` migration notes are at the bottom.
+- **Database:** **Supabase (PostgreSQL)** via `@supabase/supabase-js`
+- **Auth:** Environment-based admin credentials (`admin` / `admin123` by default)
 
 ## Features
 
 ### Participant Flow
-- Landing page with event branding and Start Quiz CTA
-- Registration/login (find-or-create by email/phone)
-- Random set assignment (A, B or C) — sticky across refresh/reconnect
-- One-attempt-per-participant enforcement
-- 30-question quiz (10 set-specific + 20 bonus questions common to all sets)
-- 15-minute countdown timer, auto-submit on expiry
-- Prev/Next navigation + question palette (jump-to)
-- Auto-save answers on every selection
-- Timer resumes correctly on refresh/reconnect (server-side `ends_at`)
+- Branded landing page (BLUDE logo)
+- Register/login (find-or-create by email + phone)
+- Random set assignment (A, B or C), sticky across refresh/reconnect
+- One attempt per participant, enforced across sessions
+- 30-question quiz per participant (10 assigned + 20 bonus common questions)
+- 15-minute server-side countdown timer
+- Previous / Next navigation + jump-to question palette
+- Auto-save on every answer selection
+- Timer resumes correctly on refresh/reconnect
 - Post-submit screen shows only: **"Thank you for participating."**
 
 ### Anti-Cheating
 - Timer stored on server (`ends_at`); refresh cannot reset it
-- Right-click disabled during quiz
-- Text selection disabled
-- Tab-switch tracking via `visibilitychange` — warning shown, **>2 switches auto-submits**
+- Right-click and text-selection disabled during quiz
+- Tab-switch tracking via `visibilitychange`; warning shown, **> 2 switches auto-submits**
 - Single active session per participant (session token)
 - Prevents re-taking after submission
 
-### Admin Dashboard
-- Login: **admin / admin123** (edit in `/app/app/api/[[...path]]/route.js`)
-- Live stats: total registrations, in-progress, completed
-- Participant table with search (name/email/phone/dept/college)
-- Leaderboard sorted by score then fastest time
+### Admin Dashboard (`/admin`)
+- Login with `admin` / `admin123` (overridable via env vars)
+- Live stats: total registrations, in-progress, completed (auto-refresh 8s)
+- Participant table with search (name, email, phone, department, college)
+- Leaderboard sorted by score DESC then time_taken ASC (medals for top 3)
 - CSV export (`/api/admin/export`)
-- Auto-refreshes every 8 seconds
 
-## Database Collections
+## Database Schema
 
-| Collection | Fields |
+See `supabase/schema.sql`. Four tables:
+
+| Table | Purpose |
 |---|---|
-| `participants` | id, full_name, dob, email, phone, college, department, year, assigned_set, created_at |
-| `questions` | id, set (A/B/C/BONUS_RESEARCH/BONUS_STARTUP), question_number, question_text, options{A,B,C,D}, correct_answer, category |
-| `quiz_sessions` | id, participant_id, assigned_set, started_at, ends_at, answers{qid:letter}, tab_switches, submitted, submitted_at, score, total_questions, time_taken_seconds, auto_submitted, session_token, last_seen |
+| `participants` | Registrations with assigned_set |
+| `questions` | 50 questions (10 each of A/B/C + 20 bonus) |
+| `quiz_sessions` | Timer + answers + score per participant |
+| `admin_users` | Registry of admin usernames |
 
-Questions are **auto-seeded on first API request** from `/app/lib/questions_seed.js` (60 questions parsed from `College_Event_MCQ_Sets_A_B_C.docx`).
+Questions are **auto-seeded on first API request** from `lib/questions_seed.js` (parsed from the original DOCX).
 
 ## Local Development
 
 ```bash
-# Install deps
+# 1. Install dependencies
 yarn install
 
-# Start MongoDB locally (or set MONGO_URL in .env)
-sudo service mongod start
+# 2. Set env vars in .env (copy .env.example if provided)
+SUPABASE_URL=https://<your-project>.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<service_role_key>
 
-# Ensure /app/.env has:
-#   MONGO_URL=mongodb://localhost:27017
-#   DB_NAME=quiz_app
+# 3. Run the schema once in Supabase SQL Editor
+#    (copy supabase/schema.sql -> Supabase Dashboard -> SQL Editor -> Run)
 
-# Run dev server
+# 4. Start dev server
 yarn dev
 ```
 
 Open http://localhost:3000
-
 Admin: http://localhost:3000/admin
 
-## Deployment (Vercel)
+## Deployment
 
-1. Push this repo to GitHub.
-2. Import into Vercel.
-3. Set environment variables in Vercel Project Settings:
-   - `MONGO_URL` = your MongoDB connection string (e.g., MongoDB Atlas)
-   - `DB_NAME` = `quiz_app`
-4. Deploy.
+See **[DEPLOY.md](./DEPLOY.md)** for step-by-step Vercel + Supabase (recommended) or Vercel + MongoDB Atlas (alternative) deployment instructions.
 
-### MongoDB Atlas Setup
+## Question Import
 
-1. Create a free cluster at https://www.mongodb.com/cloud/atlas
-2. Whitelist Vercel IPs (or `0.0.0.0/0` for simplicity)
-3. Create a DB user, copy the SRV connection string
-4. Paste into `MONGO_URL` env var
-
-## Migrating to Supabase (Optional)
-
-If you strictly require Supabase/PostgreSQL:
-
-1. Create tables mirroring the collections above (see `sql/schema.sql` template you can adapt).
-2. Replace MongoDB driver calls in `/app/app/api/[[...path]]/route.js` with `@supabase/supabase-js`.
-3. Add env vars: `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.
-4. Use Supabase Auth for admin (email/password) instead of the hardcoded admin.
-
-## Question Import Utility
-
-The DOCX file was parsed into a flat JSON structure at `/app/lib/questions_seed.js`.
-To import new questions, either:
-- Overwrite `RAW_QUESTIONS` in that file and clear the `questions` collection
-- Or write an admin endpoint that reads a DOCX via `mammoth` and inserts rows
+The DOCX questions have been parsed into `lib/questions_seed.js` as a JavaScript array. To swap them:
+1. Edit `RAW_QUESTIONS` in `lib/questions_seed.js`
+2. In Supabase, run: `TRUNCATE questions;`
+3. Hit any API endpoint. The app will auto-seed the new questions.
 
 ## Admin Credentials
 
-- Username: `admin`
-- Password: `admin123`
+Default: `admin` / `admin123`. Override in `.env` or Vercel env:
 
-**Change these in `/app/app/api/[[...path]]/route.js` (constants `ADMIN_USER`, `ADMIN_PASS`) before the event.**
+```
+ADMIN_USERNAME=your_admin
+ADMIN_PASSWORD=your_strong_password
+```
 
-## Scalability Notes
+## Scalability
 
-- MongoDB connection is cached and reused across requests.
-- All queries use indexed fields (`id`, `participant_id`, `email`, `phone`).
-- Answers auto-save individually (small writes).
-- Should comfortably handle ~1,000 concurrent participants on Vercel + Atlas M10.
+- **Supabase Free** handles 500+ concurrent connections
+- **Vercel Hobby** supports 100k function invocations/day
+- Comfortable for a one-day 1,000-participant event
+- Upgrade to Supabase Pro if you expect > 500 concurrent users at peak
+
+## Project Structure
+
+```
+/app
+├── app/
+│   ├── api/[[...path]]/route.js    # All API endpoints
+│   ├── admin/page.js               # /admin route
+│   ├── layout.js                   # Root layout with BLUDE metadata
+│   └── page.js                     # SPA with landing/register/quiz/thankyou/admin views
+├── components/ui/                  # shadcn/ui components
+├── lib/
+│   ├── supabase.js                 # Supabase admin client (server-only)
+│   └── questions_seed.js           # 50 quiz questions from DOCX
+├── public/
+│   └── blude-logo.webp             # BLUDE brand logo
+├── supabase/
+│   └── schema.sql                  # PostgreSQL schema DDL
+├── DEPLOY.md                       # Vercel deployment guide
+├── README.md
+├── package.json
+└── .env
+```
+
+## License
+
+Proprietary - BLUDE College Event 2025.
