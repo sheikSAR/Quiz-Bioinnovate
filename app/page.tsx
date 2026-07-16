@@ -444,6 +444,9 @@ function AdminLogin({ onSuccess, onBack }) {
   const [email, setEmail] = useState('');
   const [p, setP] = useState('');
   const [loading, setLoading] = useState(false);
+  const [mode, setMode] = useState('login'); // 'login' | 'forgot'
+  const [resetSending, setResetSending] = useState(false);
+
   const submit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -460,20 +463,59 @@ function AdminLogin({ onSuccess, onBack }) {
       onSuccess();
     } finally { setLoading(false); }
   };
+
+  const sendReset = async (e) => {
+    e.preventDefault();
+    if (!email) { toast.error('Enter your admin email first'); return; }
+    setResetSending(true);
+    try {
+      await fetch('/api/admin/reset-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      toast.success('If the email matches an admin, a reset link has been sent.');
+      setMode('login');
+    } catch {
+      toast.error('Failed to send reset email');
+    } finally {
+      setResetSending(false);
+    }
+  };
+
   return (
     <div className="min-h-screen grid place-items-center bg-slate-100 dark:bg-slate-950 px-4">
       <Card className="w-full max-w-md border-2 shadow-xl">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2"><LockKeyhole className="h-5 w-5" /> Admin Login</CardTitle>
-          <CardDescription>Restricted access. Event organizers only.</CardDescription>
+          <CardTitle className="flex items-center gap-2"><LockKeyhole className="h-5 w-5" /> {mode === 'login' ? 'Admin Login' : 'Reset Password'}</CardTitle>
+          <CardDescription>
+            {mode === 'login'
+              ? 'Restricted access. Event organizers only.'
+              : 'Enter your admin email. We will send you a password reset link.'}
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={submit} className="space-y-4">
-            <div><Label>Email</Label><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="admin@blude.local" required /></div>
-            <div><Label>Password</Label><Input type="password" value={p} onChange={(e) => setP(e.target.value)} required /></div>
-            <Button type="submit" className="w-full" disabled={loading}>{loading ? 'Signing in...' : 'Sign In'}</Button>
-            <Button type="button" variant="ghost" className="w-full" onClick={onBack}>Back to home</Button>
-          </form>
+          {mode === 'login' ? (
+            <form onSubmit={submit} className="space-y-4">
+              <div><Label>Email</Label><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="admin@blude.local" required /></div>
+              <div><Label>Password</Label><Input type="password" value={p} onChange={(e) => setP(e.target.value)} required /></div>
+              <Button type="submit" className="w-full" disabled={loading}>{loading ? 'Signing in...' : 'Sign In'}</Button>
+              <div className="flex items-center justify-between text-sm">
+                <button type="button" className="text-indigo-600 hover:underline" onClick={() => setMode('forgot')}>
+                  Forgot password?
+                </button>
+                <button type="button" className="text-muted-foreground hover:underline" onClick={onBack}>
+                  Back to home
+                </button>
+              </div>
+            </form>
+          ) : (
+            <form onSubmit={sendReset} className="space-y-4">
+              <div><Label>Admin Email</Label><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="admin@blude.local" required /></div>
+              <Button type="submit" className="w-full" disabled={resetSending}>{resetSending ? 'Sending...' : 'Send Reset Link'}</Button>
+              <Button type="button" variant="ghost" className="w-full" onClick={() => setMode('login')}>Back to sign in</Button>
+            </form>
+          )}
         </CardContent>
       </Card>
     </div>

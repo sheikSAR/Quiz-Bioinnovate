@@ -1,7 +1,8 @@
 import './globals.css';
+import type { Metadata } from 'next';
 import { Toaster } from '@/components/ui/sonner';
 
-export const metadata = {
+export const metadata: Metadata = {
   title: 'BLUDE Quiz 2025',
   description: 'MCQ Quiz Competition. Test your knowledge across Science, Tech, Innovation and Current Affairs.',
   icons: {
@@ -9,7 +10,7 @@ export const metadata = {
   },
 };
 
-export default function RootLayout({ children }) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <body className="min-h-screen bg-background text-foreground antialiased">

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
-import { supabaseAdmin } from '@/lib/supabase';
+import { supabaseAdmin, supabaseAnon } from '@/lib/supabase';
 import { RAW_QUESTIONS } from '@/lib/questions_seed';
 
 export const dynamic = 'force-dynamic';
@@ -310,6 +310,20 @@ async function handler(request, ctx) {
     }
 
     // ---------- ADMIN (Supabase Auth) ----------
+    if (path === '/admin/reset-request' && method === 'POST') {
+      const body = await request.json();
+      const email = String(body.email || '').trim().toLowerCase();
+      // Always return ok to prevent email enumeration.
+      // Only actually send a reset email if the email matches the configured admin email.
+      if (email && email === ADMIN_EMAIL.toLowerCase()) {
+        const base = process.env.NEXT_PUBLIC_BASE_URL || '';
+        const redirectTo = base.replace(/\/$/, '') + '/admin/reset';
+        const { error } = await supabaseAnon.auth.resetPasswordForEmail(email, { redirectTo });
+        if (error) console.warn('reset-request error:', error?.message);
+      }
+      return NextResponse.json({ ok: true });
+    }
+
     if (path === '/admin/login' && method === 'POST') {
       const body = await request.json();
       // Accept both {email,password} and legacy {username,password}
