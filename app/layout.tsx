@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { Toaster } from '@/components/ui/sonner';
 
 export const metadata: Metadata = {
-  title: 'BLUDE Quiz 2025',
+  title: 'BLUDE Quiz 2026',
   description: 'MCQ Quiz Competition. Test your knowledge across Science, Tech, Innovation and Current Affairs.',
   icons: {
     icon: '/blude-logo.webp',

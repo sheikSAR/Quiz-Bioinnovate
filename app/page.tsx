@@ -34,7 +34,7 @@ function Landing({ onStart, onAdmin }) {
             </div>
             <div>
               <div className="font-black text-xl leading-none tracking-tight">BLUDE</div>
-              <div className="text-xs text-muted-foreground mt-1">College Event 2025</div>
+              <div className="text-xs text-muted-foreground mt-1">College Event 2026</div>
             </div>
           </div>
           <Button variant="ghost" size="sm" onClick={onAdmin}>
