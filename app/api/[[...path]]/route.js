@@ -376,9 +376,9 @@ async function handler(request, ctx) {
       participants.forEach((p) => (pMap[p.id] = p));
       const rows = sessions.map((s, i) => ({
         rank: i + 1,
-        full_name: pMap[s.participant_id]?.full_name || '—',
-        college: pMap[s.participant_id]?.college || '—',
-        department: pMap[s.participant_id]?.department || '—',
+        full_name: pMap[s.participant_id]?.full_name || '-',
+        college: pMap[s.participant_id]?.college || '-',
+        department: pMap[s.participant_id]?.department || '-',
         assigned_set: s.assigned_set,
         score: s.score,
         total_questions: s.total_questions,

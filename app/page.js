@@ -28,13 +28,13 @@ function Landing({ onStart, onAdmin }) {
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 dark:from-slate-950 dark:via-slate-900 dark:to-purple-950">
       <div className="container mx-auto px-4 py-14 md:py-20">
         <div className="flex items-center justify-between mb-12">
-          <div className="flex items-center gap-2">
-            <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-indigo-600 to-purple-600 grid place-items-center text-white">
-              <Brain className="h-5 w-5" />
+          <div className="flex items-center gap-3">
+            <div className="h-14 w-14 rounded-xl bg-gradient-to-br from-slate-900 to-indigo-900 grid place-items-center p-2 shadow-lg">
+              <img src="/blude-logo.webp" alt="BLUDE" className="h-full w-full object-contain" />
             </div>
             <div>
-              <div className="font-bold text-lg leading-none">Quiz Arena</div>
-              <div className="text-xs text-muted-foreground">College Event 2025</div>
+              <div className="font-black text-xl leading-none tracking-tight">BLUDE</div>
+              <div className="text-xs text-muted-foreground mt-1">College Event 2025</div>
             </div>
           </div>
           <Button variant="ghost" size="sm" onClick={onAdmin}>
@@ -60,7 +60,7 @@ function Landing({ onStart, onAdmin }) {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-16">
             {[
               { icon: Clock, title: '15 Min Timer', desc: 'Fair, timed & fast-paced' },
-              { icon: GraduationCap, title: '3 Random Sets', desc: 'A, B or C — assigned randomly' },
+              { icon: GraduationCap, title: '3 Random Sets', desc: 'A, B or C, assigned randomly' },
               { icon: Trophy, title: 'Live Leaderboard', desc: 'Compete with your peers' },
             ].map((f, i) => (
               <Card key={i} className="border-2">
@@ -269,7 +269,7 @@ function Quiz({ participant, sessionToken, onSubmitted }) {
             setTabSwitches(data.tab_switches);
             if (data.tab_switches > 2 && !submittedRef.current) {
               submittedRef.current = true;
-              toast.error('Tab switched more than 2 times — auto-submitting');
+              toast.error('Tab switched more than 2 times. Auto-submitting.');
               doSubmit(true);
             } else {
               toast.warning(`Warning: leaving the tab is not allowed (${data.tab_switches}/2)`);
@@ -464,7 +464,7 @@ function AdminLogin({ onSuccess, onBack }) {
       <Card className="w-full max-w-md border-2 shadow-xl">
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><LockKeyhole className="h-5 w-5" /> Admin Login</CardTitle>
-          <CardDescription>Restricted access — event organizers only.</CardDescription>
+          <CardDescription>Restricted access. Event organizers only.</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={submit} className="space-y-4">
@@ -507,12 +507,12 @@ function AdminDashboard({ onLogout }) {
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
       <div className="bg-white dark:bg-slate-900 border-b">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-indigo-600 to-purple-600 grid place-items-center text-white">
-              <Brain className="h-4 w-4" />
+          <div className="flex items-center gap-3">
+            <div className="h-11 w-11 rounded-lg bg-gradient-to-br from-slate-900 to-indigo-900 grid place-items-center p-1.5 shadow">
+              <img src="/blude-logo.webp" alt="BLUDE" className="h-full w-full object-contain" />
             </div>
             <div>
-              <div className="font-bold">Quiz Arena — Admin</div>
+              <div className="font-bold">BLUDE Admin</div>
               <div className="text-xs text-muted-foreground">Live event dashboard</div>
             </div>
           </div>
@@ -581,8 +581,8 @@ function AdminDashboard({ onLogout }) {
                             {r.status}
                           </Badge>
                         </td>
-                        <td className="py-2 pr-3">{r.score != null ? `${r.score}/${r.total_questions}` : '—'}</td>
-                        <td className="py-2 pr-3">{r.time_taken_seconds != null ? fmtTime(r.time_taken_seconds) : '—'}</td>
+                        <td className="py-2 pr-3">{r.score != null ? `${r.score}/${r.total_questions}` : '-'}</td>
+                        <td className="py-2 pr-3">{r.time_taken_seconds != null ? fmtTime(r.time_taken_seconds) : '-'}</td>
                         <td className="py-2 pr-3">{r.tab_switches}{r.auto_submitted && <span className="text-red-500 ml-1">(auto)</span>}</td>
                       </tr>
                     ))}

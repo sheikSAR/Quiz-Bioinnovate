@@ -2,8 +2,11 @@ import './globals.css';
 import { Toaster } from '@/components/ui/sonner';
 
 export const metadata = {
-  title: 'College Event Quiz 2025',
-  description: 'MCQ Quiz Competition — Test your knowledge across Science, Tech, Innovation & Current Affairs.',
+  title: 'BLUDE Quiz 2025',
+  description: 'MCQ Quiz Competition. Test your knowledge across Science, Tech, Innovation and Current Affairs.',
+  icons: {
+    icon: '/blude-logo.webp',
+  },
 };
 
 export default function RootLayout({ children }) {
